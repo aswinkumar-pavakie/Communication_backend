@@ -1,0 +1,666 @@
+// Prisma schema for the Communication Assistant backend.
+// Database: PostgreSQL hosted on Supabase.
+// Prisma 7: connection URLs are no longer set here - they live in prisma.config.ts
+// (CLI/migrations) and are passed to the @prisma/adapter-pg driver adapter at runtime
+// (see src/prisma/prisma.service.ts). DATABASE_URL is the pooled runtime connection
+// (pgbouncer, port 6543); DIRECT_URL is the direct connection (port 5432) used by the CLI.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  STUDENT
+  ADMIN
+  // Reserved for future institutional rollout (ERP integration) - not implemented yet.
+  FACULTY
+  TRAINER
+  INSTITUTION_ADMIN
+  SUPER_ADMIN
+}
+
+enum SkillCode {
+  GRAMMAR
+  VOCABULARY
+  FLUENCY
+  PRONUNCIATION
+  LISTENING
+  CLARITY
+  CONFIDENCE
+  PROFESSIONAL_TONE
+  INTERVIEW
+  CRITICAL_THINKING
+  TECHNICAL_COMMUNICATION
+}
+
+enum ActivityType {
+  SPEAKING
+  INTERVIEW
+  ROLEPLAY
+  DEBATE
+  VOCABULARY
+  GRAMMAR
+  LISTENING
+  PRONUNCIATION
+  WRITING
+  NETWORKING
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum AttemptStatus {
+  STARTED
+  COMPLETED
+  ABANDONED
+}
+
+enum ProgressTrend {
+  IMPROVING
+  DECLINING
+  STABLE
+}
+
+enum RecommendationStatus {
+  PENDING
+  COMPLETED
+  DISMISSED
+}
+
+enum ConversationType {
+  GENERAL
+  ACTIVITY
+  INTERVIEW
+  ROLEPLAY
+  DEBATE
+}
+
+enum ConversationStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum MessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+}
+
+enum InterviewType {
+  HR
+  TECHNICAL
+  PROJECT
+}
+
+enum RoleplayScenario {
+  TEAM_CONFLICT
+  TALKING_TO_MANAGER
+  CUSTOMER_CONVERSATION
+  ASKING_FOR_HELP
+  GIVING_FEEDBACK
+  HANDLING_DISAGREEMENT
+  WORKPLACE_PROBLEM_SOLVING
+}
+
+enum DebatePosition {
+  FOR
+  AGAINST
+}
+
+enum WritingType {
+  EMAIL
+  FOLLOW_UP_EMAIL
+  INTERNSHIP_REQUEST
+  MEETING_REQUEST
+  PROJECT_UPDATE
+  PROFESSIONAL_CHAT
+}
+
+enum AiServiceType {
+  STT
+  LLM
+  TTS
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role     @default(STUDENT)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  studentProfile StudentProfile?
+  refreshTokens  RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model StudentProfile {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @unique @map("user_id") @db.Uuid
+  firstName          String   @map("first_name")
+  lastName            String   @map("last_name")
+  phone              String?
+  department         String?
+  year               Int?
+  batch              String?
+  profileImage       String?  @map("profile_image")
+  // Nullable placeholder for future college ERP integration. Not used yet.
+  externalStudentId  String?  @unique @map("external_student_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts        ActivityAttempt[]
+  progress        Progress[]
+  recommendations Recommendation[]
+  interviewAttempts InterviewAttempt[]
+  roleplaySessions  RoleplaySession[]
+  debateSessions    DebateSession[]
+  writingSubmissions WritingSubmission[]
+  reports           Report[]
+  conversations     Conversation[]
+  voiceSessions     VoiceSession[]
+  aiUsageLogs       AiUsageLog[]
+
+  @@map("student_profiles")
+}
+
+// ---------------------------------------------------------------------------
+// Skills & Activities
+// ---------------------------------------------------------------------------
+
+model Skill {
+  id          String    @id @default(uuid()) @db.Uuid
+  code        SkillCode @unique
+  name        String
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  activities      Activity[]
+  assessmentScores AssessmentScore[]
+  progress        Progress[]
+  recommendations Recommendation[]
+
+  @@map("skills")
+}
+
+model Activity {
+  id              String       @id @default(uuid()) @db.Uuid
+  title           String       @unique
+  description     String
+  type            ActivityType
+  difficulty      Difficulty
+  skillId         String       @map("skill_id") @db.Uuid
+  durationMinutes Int          @map("duration_minutes")
+  instructions    String?
+  isActive        Boolean      @default(true) @map("is_active")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  skill           Skill             @relation(fields: [skillId], references: [id])
+  attempts        ActivityAttempt[]
+  recommendations Recommendation[]
+  conversations   Conversation[]
+  voiceSessions   VoiceSession[]
+
+  @@index([type])
+  @@index([skillId])
+  @@map("activities")
+}
+
+model ActivityAttempt {
+  id            String        @id @default(uuid()) @db.Uuid
+  studentId     String        @map("student_id") @db.Uuid
+  activityId    String        @map("activity_id") @db.Uuid
+  status        AttemptStatus @default(STARTED)
+  startedAt     DateTime      @default(now()) @map("started_at")
+  completedAt   DateTime?     @map("completed_at")
+  responseText  String?       @map("response_text")
+  audioUrl      String?       @map("audio_url")
+  overallScore  Float?        @map("overall_score")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  student    StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  activity   Activity       @relation(fields: [activityId], references: [id])
+  assessment Assessment?
+
+  @@index([studentId])
+  @@index([activityId])
+  @@map("activity_attempts")
+}
+
+// ---------------------------------------------------------------------------
+// Assessments & Progress
+// ---------------------------------------------------------------------------
+
+model Assessment {
+  id                String   @id @default(uuid()) @db.Uuid
+  attemptId         String   @unique @map("attempt_id") @db.Uuid
+  overallScore      Float    @map("overall_score")
+  feedback          String
+  strengths         String[]
+  weaknesses        String[]
+  suggestedResponse String?  @map("suggested_response")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  attempt ActivityAttempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  scores  AssessmentScore[]
+
+  @@map("assessments")
+}
+
+model AssessmentScore {
+  id           String   @id @default(uuid()) @db.Uuid
+  assessmentId String   @map("assessment_id") @db.Uuid
+  skillId      String   @map("skill_id") @db.Uuid
+  score        Float
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  skill      Skill      @relation(fields: [skillId], references: [id])
+
+  @@unique([assessmentId, skillId])
+  @@map("assessment_scores")
+}
+
+model Progress {
+  id             String        @id @default(uuid()) @db.Uuid
+  studentId      String        @map("student_id") @db.Uuid
+  skillId        String        @map("skill_id") @db.Uuid
+  currentScore   Float         @map("current_score")
+  previousScore  Float?        @map("previous_score")
+  trend          ProgressTrend @default(STABLE)
+  lastAssessedAt DateTime      @default(now()) @map("last_assessed_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  skill   Skill          @relation(fields: [skillId], references: [id])
+
+  @@unique([studentId, skillId])
+  @@map("progress")
+}
+
+model Recommendation {
+  id         String               @id @default(uuid()) @db.Uuid
+  studentId  String               @map("student_id") @db.Uuid
+  skillId    String               @map("skill_id") @db.Uuid
+  activityId String?              @map("activity_id") @db.Uuid
+  reason     String
+  priority   Int                  @default(0)
+  status     RecommendationStatus @default(PENDING)
+  createdAt  DateTime             @default(now()) @map("created_at")
+  updatedAt  DateTime             @updatedAt @map("updated_at")
+
+  student  StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  skill    Skill          @relation(fields: [skillId], references: [id])
+  activity Activity?      @relation(fields: [activityId], references: [id])
+
+  @@index([studentId])
+  @@map("recommendations")
+}
+
+// ---------------------------------------------------------------------------
+// Interviews
+// ---------------------------------------------------------------------------
+
+model Interview {
+  id              String        @id @default(uuid()) @db.Uuid
+  title           String        @unique
+  type            InterviewType
+  description     String?
+  difficulty      Difficulty
+  durationMinutes Int           @map("duration_minutes")
+  isActive        Boolean       @default(true) @map("is_active")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  questions InterviewQuestion[]
+  attempts  InterviewAttempt[]
+
+  @@map("interviews")
+}
+
+model InterviewQuestion {
+  id           String     @id @default(uuid()) @db.Uuid
+  interviewId  String     @map("interview_id") @db.Uuid
+  order        Int
+  questionText String     @map("question_text")
+  category     String?
+  difficulty   Difficulty @default(INTERMEDIATE)
+  isActive     Boolean    @default(true) @map("is_active")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  interview Interview          @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  answers   InterviewAnswer[]
+
+  @@unique([interviewId, order])
+  @@map("interview_questions")
+}
+
+model InterviewAttempt {
+  id           String        @id @default(uuid()) @db.Uuid
+  studentId    String        @map("student_id") @db.Uuid
+  interviewId  String        @map("interview_id") @db.Uuid
+  status       AttemptStatus @default(STARTED)
+  startedAt    DateTime      @default(now()) @map("started_at")
+  completedAt  DateTime?     @map("completed_at")
+  overallScore Float?        @map("overall_score")
+  feedback     Json?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  student   StudentProfile     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  interview Interview          @relation(fields: [interviewId], references: [id])
+  answers   InterviewAnswer[]
+
+  @@index([studentId])
+  @@index([interviewId])
+  @@map("interview_attempts")
+}
+
+model InterviewAnswer {
+  id                  String   @id @default(uuid()) @db.Uuid
+  interviewAttemptId  String   @map("interview_attempt_id") @db.Uuid
+  interviewQuestionId String   @map("interview_question_id") @db.Uuid
+  answerText          String?  @map("answer_text")
+  audioUrl            String?  @map("audio_url")
+  score               Float?
+  feedback            Json?
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  attempt  InterviewAttempt  @relation(fields: [interviewAttemptId], references: [id], onDelete: Cascade)
+  question InterviewQuestion @relation(fields: [interviewQuestionId], references: [id])
+
+  @@index([interviewAttemptId])
+  @@map("interview_answers")
+}
+
+// ---------------------------------------------------------------------------
+// Roleplay
+// ---------------------------------------------------------------------------
+
+model Roleplay {
+  id          String           @id @default(uuid()) @db.Uuid
+  title       String           @unique
+  scenario    RoleplayScenario
+  description String?
+  difficulty  Difficulty
+  isActive    Boolean          @default(true) @map("is_active")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  sessions RoleplaySession[]
+
+  @@map("roleplays")
+}
+
+model RoleplaySession {
+  id           String        @id @default(uuid()) @db.Uuid
+  studentId    String        @map("student_id") @db.Uuid
+  roleplayId   String        @map("roleplay_id") @db.Uuid
+  status       AttemptStatus @default(STARTED)
+  startedAt    DateTime      @default(now()) @map("started_at")
+  completedAt  DateTime?     @map("completed_at")
+  overallScore Float?        @map("overall_score")
+  feedback     Json?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  student  StudentProfile    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  roleplay Roleplay          @relation(fields: [roleplayId], references: [id])
+  messages RoleplayMessage[]
+
+  @@index([studentId])
+  @@map("roleplay_sessions")
+}
+
+model RoleplayMessage {
+  id        String      @id @default(uuid()) @db.Uuid
+  sessionId String      @map("session_id") @db.Uuid
+  role      MessageRole
+  content   String
+  score     Float?
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  session RoleplaySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("roleplay_messages")
+}
+
+// ---------------------------------------------------------------------------
+// Debate
+// ---------------------------------------------------------------------------
+
+model Debate {
+  id          String     @id @default(uuid()) @db.Uuid
+  topic       String     @unique
+  description String?
+  difficulty  Difficulty
+  isActive    Boolean    @default(true) @map("is_active")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  sessions DebateSession[]
+
+  @@map("debates")
+}
+
+model DebateSession {
+  id              String         @id @default(uuid()) @db.Uuid
+  studentId       String         @map("student_id") @db.Uuid
+  debateId        String         @map("debate_id") @db.Uuid
+  studentPosition DebatePosition @map("student_position")
+  status          AttemptStatus  @default(STARTED)
+  startedAt       DateTime       @default(now()) @map("started_at")
+  completedAt     DateTime?      @map("completed_at")
+  overallScore    Float?         @map("overall_score")
+  feedback        Json?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  student  StudentProfile  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  debate   Debate          @relation(fields: [debateId], references: [id])
+  messages DebateMessage[]
+
+  @@index([studentId])
+  @@map("debate_sessions")
+}
+
+model DebateMessage {
+  id        String      @id @default(uuid()) @db.Uuid
+  sessionId String      @map("session_id") @db.Uuid
+  role      MessageRole
+  content   String
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  session DebateSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("debate_messages")
+}
+
+// ---------------------------------------------------------------------------
+// Writing
+// ---------------------------------------------------------------------------
+
+model WritingActivity {
+  id          String      @id @default(uuid()) @db.Uuid
+  title       String      @unique
+  description String?
+  type        WritingType
+  prompt      String
+  difficulty  Difficulty
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  submissions WritingSubmission[]
+
+  @@map("writing_activities")
+}
+
+model WritingSubmission {
+  id                String        @id @default(uuid()) @db.Uuid
+  studentId         String        @map("student_id") @db.Uuid
+  writingActivityId String        @map("writing_activity_id") @db.Uuid
+  content           String
+  feedback          Json?
+  scores            Json?
+  overallScore      Float?        @map("overall_score")
+  status            AttemptStatus @default(STARTED)
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  student         StudentProfile  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  writingActivity WritingActivity @relation(fields: [writingActivityId], references: [id])
+
+  @@index([studentId])
+  @@map("writing_submissions")
+}
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+
+model Report {
+  id                  String   @id @default(uuid()) @db.Uuid
+  studentId           String   @map("student_id") @db.Uuid
+  periodStart         DateTime @map("period_start")
+  periodEnd           DateTime @map("period_end")
+  overallScore        Float    @map("overall_score")
+  skillBreakdown       Json     @map("skill_breakdown")
+  strengths           String[]
+  weaknesses           String[]
+  improvement         Json
+  interviewReadiness  Json     @map("interview_readiness")
+  recommendedActions  String[] @map("recommended_actions")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@map("reports")
+}
+
+// ---------------------------------------------------------------------------
+// Conversation (AI conversation engine)
+// ---------------------------------------------------------------------------
+
+model Conversation {
+  id         String             @id @default(uuid()) @db.Uuid
+  studentId  String             @map("student_id") @db.Uuid
+  type       ConversationType   @default(GENERAL)
+  activityId String?            @map("activity_id") @db.Uuid
+  status     ConversationStatus @default(ACTIVE)
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  student      StudentProfile        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  activity     Activity?             @relation(fields: [activityId], references: [id])
+  messages     ConversationMessage[]
+  voiceSessions VoiceSession[]
+
+  @@index([studentId])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String      @id @default(uuid()) @db.Uuid
+  conversationId String      @map("conversation_id") @db.Uuid
+  role           MessageRole
+  content        String
+  metadata       Json?
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("conversation_messages")
+}
+
+// ---------------------------------------------------------------------------
+// Voice pipeline
+// ---------------------------------------------------------------------------
+
+model VoiceSession {
+  id             String    @id @default(uuid()) @db.Uuid
+  studentId      String    @map("student_id") @db.Uuid
+  activityId     String?   @map("activity_id") @db.Uuid
+  conversationId String?   @map("conversation_id") @db.Uuid
+  audioUrl       String    @map("audio_url")
+  transcript     String?
+  durationSeconds Float?   @map("duration_seconds")
+  status         AttemptStatus @default(STARTED)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  student      StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  activity     Activity?      @relation(fields: [activityId], references: [id])
+  conversation Conversation?  @relation(fields: [conversationId], references: [id])
+
+  @@index([studentId])
+  @@map("voice_sessions")
+}
+
+// ---------------------------------------------------------------------------
+// AI cost / usage observability (not billing - just measurement)
+// ---------------------------------------------------------------------------
+
+model AiUsageLog {
+  id                  String        @id @default(uuid()) @db.Uuid
+  studentId           String?       @map("student_id") @db.Uuid
+  provider            String
+  service             AiServiceType
+  requestType         String        @map("request_type")
+  tokensUsed          Int?          @map("tokens_used")
+  audioDurationSeconds Float?       @map("audio_duration_seconds")
+  estimatedCostUsd    Float?        @map("estimated_cost_usd")
+  metadata            Json?
+  createdAt           DateTime      @default(now()) @map("created_at")
+
+  student StudentProfile? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  @@index([studentId])
+  @@index([provider, service])
+  @@map("ai_usage_logs")
+}

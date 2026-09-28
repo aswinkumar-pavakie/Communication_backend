@@ -1,0 +1,40 @@
+# compiled output
+/dist
+/node_modules
+/build
+
+# logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.DS_Store
+
+# tests
+/coverage
+/.nyc_output
+
+# prisma
+prisma/*.db
+
+# generated Prisma client (regenerate with `npm run prisma:generate`)
+/src/generated
+
+# misc
+*.tsbuildinfo
+.env.local
