@@ -40,6 +40,10 @@ export class SupabaseStorageProvider implements StorageProvider {
     }
   }
 
+  isConfigured(): boolean {
+    return this.client !== null;
+  }
+
   async upload(input: UploadFileInput): Promise<UploadFileResult> {
     const client = this.getClientOrThrow();
     const folder = input.folder ?? 'uploads';

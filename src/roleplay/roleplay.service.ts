@@ -188,6 +188,31 @@ export class RoleplayService {
     }, COMPLETION_TRANSACTION_OPTIONS);
   }
 
+  /** The student's past (and in-progress) sessions for one scenario, newest first, with full chats. */
+  async listSessions(
+    studentId: string,
+    roleplayId: string,
+    page: number,
+    limit: number,
+  ) {
+    const where = { studentId, roleplayId };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.roleplaySession.findMany({
+        where,
+        include: { messages: { orderBy: { createdAt: 'asc' } } },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.roleplaySession.count({ where }),
+    ]);
+
+    return {
+      items,
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
   async getSession(studentId: string, sessionId: string) {
     const session = await this.prisma.roleplaySession.findFirst({
       where: { id: sessionId, studentId },

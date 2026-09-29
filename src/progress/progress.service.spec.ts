@@ -142,4 +142,240 @@ describe('ProgressService', () => {
       expect(overview.skills).toEqual([]);
     });
   });
+
+  describe('getHistory', () => {
+    function buildPrisma(overrides: {
+      skills?: unknown[];
+      activityScores?: unknown[];
+      activityAssessments?: unknown[];
+      interviewAttempts?: unknown[];
+      roleplaySessions?: unknown[];
+      debateSessions?: unknown[];
+      writingSubmissions?: unknown[];
+      weeklyActivityAttempts?: unknown[];
+      weeklyInterviewAttempts?: unknown[];
+      weeklyRoleplaySessions?: unknown[];
+      weeklyDebateSessions?: unknown[];
+      weeklyWritingSubmissions?: unknown[];
+    }) {
+      // findMany is called twice each for activityAttempt/interviewAttempt/roleplaySession/
+      // debateSession/writingSubmission (once for history, once for the weekly-activity
+      // Promise.all block) - mockResolvedValueOnce twice, in call order, keeps each call
+      // returning the right fixture.
+      const activityAttempt = {
+        findMany: jest
+          .fn<() => Promise<unknown>>()
+          .mockResolvedValueOnce(overrides.weeklyActivityAttempts ?? []),
+      };
+      const interviewAttempt = {
+        findMany: jest
+          .fn<() => Promise<unknown>>()
+          .mockResolvedValueOnce(overrides.interviewAttempts ?? [])
+          .mockResolvedValueOnce(overrides.weeklyInterviewAttempts ?? []),
+      };
+      const roleplaySession = {
+        findMany: jest
+          .fn<() => Promise<unknown>>()
+          .mockResolvedValueOnce(overrides.roleplaySessions ?? [])
+          .mockResolvedValueOnce(overrides.weeklyRoleplaySessions ?? []),
+      };
+      const debateSession = {
+        findMany: jest
+          .fn<() => Promise<unknown>>()
+          .mockResolvedValueOnce(overrides.debateSessions ?? [])
+          .mockResolvedValueOnce(overrides.weeklyDebateSessions ?? []),
+      };
+      const writingSubmission = {
+        findMany: jest
+          .fn<() => Promise<unknown>>()
+          .mockResolvedValueOnce(overrides.writingSubmissions ?? [])
+          .mockResolvedValueOnce(overrides.weeklyWritingSubmissions ?? []),
+      };
+
+      return {
+        skill: {
+          findMany: jest
+            .fn<() => Promise<unknown>>()
+            .mockResolvedValue(overrides.skills ?? []),
+        },
+        assessmentScore: {
+          findMany: jest
+            .fn<() => Promise<unknown>>()
+            .mockResolvedValue(overrides.activityScores ?? []),
+        },
+        assessment: {
+          findMany: jest
+            .fn<() => Promise<unknown>>()
+            .mockResolvedValue(overrides.activityAssessments ?? []),
+        },
+        interviewAttempt,
+        roleplaySession,
+        debateSession,
+        writingSubmission,
+        activityAttempt,
+      };
+    }
+
+    it('includes an INTERVIEW skill-history point and a synthesized feedback string for completed interviews', async () => {
+      const date = new Date('2026-09-20T10:00:00Z');
+      const prisma = buildPrisma({
+        skills: [{ id: 's1', code: 'INTERVIEW', name: 'Interview Skills' }],
+        interviewAttempts: [
+          { id: 'ia1', overallScore: 72, completedAt: date, createdAt: date },
+        ],
+      });
+
+      const service = new ProgressService(prisma as never);
+      const history = await service.getHistory('student-1');
+
+      expect(history.skillHistory).toEqual([
+        {
+          skillCode: 'INTERVIEW',
+          skillName: 'Interview Skills',
+          points: [{ date, score: 72 }],
+        },
+      ]);
+      expect(history.recentAssessments).toContainEqual(
+        expect.objectContaining({
+          id: 'ia1',
+          overallScore: 72,
+          feedback: 'Completed a mock interview.',
+        }),
+      );
+    });
+
+    it('parses skillScores out of Roleplay/Debate JSON feedback and includes the narrative feedback text', async () => {
+      const date = new Date('2026-09-21T10:00:00Z');
+      const prisma = buildPrisma({
+        skills: [
+          { id: 's1', code: 'PROFESSIONAL_TONE', name: 'Professional Tone' },
+        ],
+        roleplaySessions: [
+          {
+            id: 'rp1',
+            overallScore: 68,
+            completedAt: date,
+            createdAt: date,
+            feedback: {
+              feedback: 'Handled the conversation professionally.',
+              skillScores: [{ skillCode: 'PROFESSIONAL_TONE', score: 68 }],
+            },
+          },
+        ],
+      });
+
+      const service = new ProgressService(prisma as never);
+      const history = await service.getHistory('student-1');
+
+      expect(history.skillHistory).toEqual([
+        {
+          skillCode: 'PROFESSIONAL_TONE',
+          skillName: 'Professional Tone',
+          points: [{ date, score: 68 }],
+        },
+      ]);
+      expect(history.recentAssessments).toContainEqual(
+        expect.objectContaining({
+          id: 'rp1',
+          feedback: 'Handled the conversation professionally.',
+        }),
+      );
+    });
+
+    it('parses Writing skillScores from the separate `scores` JSON column', async () => {
+      const date = new Date('2026-09-22T10:00:00Z');
+      const prisma = buildPrisma({
+        skills: [{ id: 's1', code: 'GRAMMAR', name: 'Grammar' }],
+        writingSubmissions: [
+          {
+            id: 'w1',
+            overallScore: 55,
+            createdAt: date,
+            feedback: { feedback: 'Solid structure, minor grammar slips.' },
+            scores: [{ skillCode: 'GRAMMAR', score: 55 }],
+          },
+        ],
+      });
+
+      const service = new ProgressService(prisma as never);
+      const history = await service.getHistory('student-1');
+
+      expect(history.skillHistory).toEqual([
+        {
+          skillCode: 'GRAMMAR',
+          skillName: 'Grammar',
+          points: [{ date, score: 55 }],
+        },
+      ]);
+      expect(history.recentAssessments).toContainEqual(
+        expect.objectContaining({
+          id: 'w1',
+          feedback: 'Solid structure, minor grammar slips.',
+        }),
+      );
+    });
+
+    it('silently skips malformed/null JSON instead of throwing', async () => {
+      const date = new Date('2026-09-23T10:00:00Z');
+      const prisma = buildPrisma({
+        skills: [{ id: 's1', code: 'GRAMMAR', name: 'Grammar' }],
+        roleplaySessions: [
+          {
+            id: 'rp1',
+            overallScore: 40,
+            completedAt: date,
+            createdAt: date,
+            feedback: null,
+          },
+        ],
+        writingSubmissions: [
+          {
+            id: 'w1',
+            overallScore: 40,
+            createdAt: date,
+            feedback: null,
+            scores: 'not-an-array',
+          },
+        ],
+      });
+
+      const service = new ProgressService(prisma as never);
+      const history = await service.getHistory('student-1');
+
+      expect(history.skillHistory).toEqual([]);
+      expect(history.recentAssessments).toContainEqual(
+        expect.objectContaining({
+          id: 'rp1',
+          feedback: 'Completed a practice session.',
+        }),
+      );
+      expect(history.recentAssessments).toContainEqual(
+        expect.objectContaining({
+          id: 'w1',
+          feedback: 'Completed a writing submission.',
+        }),
+      );
+    });
+
+    it('merges weekly-activity dates from all 5 completion types and groups them by day', async () => {
+      const day1 = new Date('2026-09-20T08:00:00Z');
+      const day1Later = new Date('2026-09-20T20:00:00Z');
+      const day2 = new Date('2026-09-21T08:00:00Z');
+      const prisma = buildPrisma({
+        weeklyActivityAttempts: [{ completedAt: day1 }],
+        weeklyInterviewAttempts: [{ completedAt: day1Later }],
+        weeklyRoleplaySessions: [{ completedAt: day2 }],
+        weeklyDebateSessions: [],
+        weeklyWritingSubmissions: [{ createdAt: day2 }],
+      });
+
+      const service = new ProgressService(prisma as never);
+      const history = await service.getHistory('student-1');
+
+      expect(history.weeklyActivity).toEqual([
+        { date: '2026-09-20', count: 2 },
+        { date: '2026-09-21', count: 2 },
+      ]);
+    });
+  });
 });

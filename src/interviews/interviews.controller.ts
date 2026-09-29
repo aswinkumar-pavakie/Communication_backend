@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto.js';
 import { CompleteInterviewDto } from './dto/complete-interview.dto.js';
 import { InterviewQueryDto } from './dto/interview-query.dto.js';
 import { SubmitAnswerDto } from './dto/submit-answer.dto.js';
@@ -71,6 +72,24 @@ export class InterviewsController {
     @Body() dto: CompleteInterviewDto,
   ) {
     return this.interviewsService.complete(studentProfileId, dto.attemptId);
+  }
+
+  @Get(':id/attempts')
+  @ApiOperation({
+    summary:
+      "List the current student's attempts for this interview, with every question and answer. In-progress attempts include the next question so they can be resumed.",
+  })
+  listAttempts(
+    @CurrentUser('studentProfileId') studentProfileId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    return this.interviewsService.listAttempts(
+      studentProfileId,
+      id,
+      query.page,
+      query.limit,
+    );
   }
 
   @Get(':id/result')

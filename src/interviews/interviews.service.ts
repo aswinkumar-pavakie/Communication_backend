@@ -176,6 +176,60 @@ export class InterviewsService {
     }, COMPLETION_TRANSACTION_OPTIONS);
   }
 
+  /**
+   * The student's attempts for one interview, newest first, each with its Q&A in order.
+   * In-progress attempts carry `nextQuestion` (null once every question is answered)
+   * so the app can resume them instead of the answers being stranded.
+   */
+  async listAttempts(
+    studentId: string,
+    interviewId: string,
+    page: number,
+    limit: number,
+  ) {
+    const where = { studentId, interviewId };
+    const [attempts, total] = await this.prisma.$transaction([
+      this.prisma.interviewAttempt.findMany({
+        where,
+        include: {
+          answers: {
+            include: { question: true },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.interviewAttempt.count({ where }),
+    ]);
+
+    const items = await Promise.all(
+      attempts.map(async (attempt) => {
+        if (attempt.status !== 'STARTED') {
+          return { ...attempt, nextQuestion: null };
+        }
+        const lastOrder = attempt.answers.reduce(
+          (max, a) => Math.max(max, a.question.order),
+          0,
+        );
+        const nextQuestion =
+          attempt.answers.length === 0
+            ? await this.questionService.getFirstQuestion(interviewId)
+            : await this.questionService.getNextQuestion(
+                interviewId,
+                lastOrder,
+              );
+        return { ...attempt, nextQuestion };
+      }),
+    );
+
+    return {
+      items,
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
   async getResult(studentId: string, interviewId: string, attemptId?: string) {
     const attempt = await this.prisma.interviewAttempt.findFirst({
       where: {

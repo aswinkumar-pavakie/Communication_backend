@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto.js';
 import { CompleteDebateDto } from './dto/complete-debate.dto.js';
 import { DebateQueryDto } from './dto/debate-query.dto.js';
 import { SendArgumentDto } from './dto/send-argument.dto.js';
@@ -41,6 +42,24 @@ export class DebatesController {
     @Body() dto: StartDebateDto,
   ) {
     return this.debatesService.startSession(studentProfileId, id, dto.position);
+  }
+
+  @Get(':id/sessions')
+  @ApiOperation({
+    summary:
+      "List the current student's sessions for this topic, with their messages.",
+  })
+  listSessions(
+    @CurrentUser('studentProfileId') studentProfileId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    return this.debatesService.listSessions(
+      studentProfileId,
+      id,
+      query.page,
+      query.limit,
+    );
   }
 
   @Post(':id/arguments')

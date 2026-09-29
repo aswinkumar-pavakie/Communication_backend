@@ -13,6 +13,8 @@ export interface UploadFileResult {
 
 export interface StorageProvider {
   readonly name: string;
+  /** False when credentials aren't set - callers can skip optional uploads instead of failing. */
+  isConfigured(): boolean;
   upload(input: UploadFileInput): Promise<UploadFileResult>;
   getSignedUrl(path: string, expiresInSeconds?: number): Promise<string>;
   delete(path: string): Promise<void>;

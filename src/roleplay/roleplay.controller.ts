@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto.js';
 import { CompleteSessionDto } from './dto/complete-session.dto.js';
 import { RoleplayQueryDto } from './dto/roleplay-query.dto.js';
 import { SendMessageDto } from './dto/send-message.dto.js';
@@ -41,6 +42,24 @@ export class RoleplayController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.roleplayService.startSession(studentProfileId, id);
+  }
+
+  @Get(':id/sessions')
+  @ApiOperation({
+    summary:
+      "List the current student's sessions for this scenario, with their messages.",
+  })
+  listSessions(
+    @CurrentUser('studentProfileId') studentProfileId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    return this.roleplayService.listSessions(
+      studentProfileId,
+      id,
+      query.page,
+      query.limit,
+    );
   }
 
   @Post(':id/messages')

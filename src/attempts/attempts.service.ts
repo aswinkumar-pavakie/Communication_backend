@@ -62,7 +62,8 @@ export class AttemptsService {
     studentId: string,
     activityId: string,
     transcript: string,
-    audioPath: string,
+    /** Null when the recording couldn't be stored - scoring still proceeds. */
+    audioPath: string | null,
   ) {
     const activity = await this.prisma.activity.findUnique({
       where: { id: activityId },

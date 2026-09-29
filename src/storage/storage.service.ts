@@ -14,6 +14,10 @@ import {
 export class StorageService {
   constructor(private readonly provider: SupabaseStorageProvider) {}
 
+  isConfigured(): boolean {
+    return (this.provider as StorageProvider).isConfigured();
+  }
+
   upload(input: UploadFileInput): Promise<UploadFileResult> {
     return (this.provider as StorageProvider).upload(input);
   }

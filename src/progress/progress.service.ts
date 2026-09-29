@@ -10,6 +10,61 @@ export interface SkillScoreInput {
 const RECENT_ASSESSMENTS_LIMIT = 10;
 const WEEKLY_ACTIVITY_DAYS = 7;
 
+interface ParsedSkillScore {
+  skillCode: string;
+  score: number;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function parseSkillScoresJson(
+  value: Prisma.JsonValue | null,
+): ParsedSkillScore[] {
+  if (!Array.isArray(value)) return [];
+  const result: ParsedSkillScore[] = [];
+  for (const entry of value) {
+    if (
+      entry &&
+      typeof entry === 'object' &&
+      'skillCode' in entry &&
+      'score' in entry &&
+      typeof (entry as { skillCode: unknown }).skillCode === 'string' &&
+      isFiniteNumber((entry as { score: unknown }).score)
+    ) {
+      result.push({
+        skillCode: (entry as { skillCode: string }).skillCode,
+        score: (entry as { score: number }).score,
+      });
+    }
+  }
+  return result;
+}
+
+/** Parses the full CommunicationAssessmentResult JSON stored on Roleplay/Debate sessions. */
+function parseAssessmentResultJson(
+  value: Prisma.JsonValue | null,
+): { feedback?: string; skillScores: ParsedSkillScore[] } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return {
+    feedback: typeof record.feedback === 'string' ? record.feedback : undefined,
+    skillScores: parseSkillScoresJson(
+      (record.skillScores as Prisma.JsonValue) ?? null,
+    ),
+  };
+}
+
+/** Parses WritingSubmission.feedback, which holds only the narrative fields (no skillScores). */
+function parseWritingFeedbackJson(
+  value: Prisma.JsonValue | null,
+): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return typeof record.feedback === 'string' ? record.feedback : null;
+}
+
 @Injectable()
 export class ProgressService {
   constructor(private readonly prisma: PrismaService) {}
@@ -96,12 +151,19 @@ export class ProgressService {
     return this.getOverview(studentId).then((o) => o.skills);
   }
 
+  /**
+   * Pulls skill-history points, a recent-assessments feed, and a weekly-activity count from
+   * ALL FIVE completion types (activities, interviews, roleplay, debates, writing) - not just
+   * Activity attempts. Activities are the only type with a normalized AssessmentScore row per
+   * skill; the other four store their assessment result as a JSON blob (or, for interviews,
+   * just a flat overallScore with no per-skill breakdown), so those are parsed here rather
+   * than joined.
+   */
   async getHistory(studentId: string) {
-    const scores = await this.prisma.assessmentScore.findMany({
-      where: { assessment: { attempt: { studentId } } },
-      include: { skill: true, assessment: { select: { createdAt: true } } },
-      orderBy: { assessment: { createdAt: 'asc' } },
-    });
+    const allSkills = await this.prisma.skill.findMany();
+    const skillNameByCode = new Map(
+      allSkills.map((s) => [s.code as string, s.name]),
+    );
 
     const bySkill = new Map<
       string,
@@ -111,36 +173,164 @@ export class ProgressService {
         points: { date: Date; score: number }[];
       }
     >();
-    for (const score of scores) {
-      const key = score.skill.code;
-      if (!bySkill.has(key)) {
-        bySkill.set(key, {
-          skillCode: key,
-          skillName: score.skill.name,
-          points: [],
-        });
+    const addPoint = (skillCode: string, date: Date, score: number) => {
+      const skillName = skillNameByCode.get(skillCode);
+      if (!skillName) return;
+      if (!bySkill.has(skillCode)) {
+        bySkill.set(skillCode, { skillCode, skillName, points: [] });
       }
-      bySkill
-        .get(key)!
-        .points.push({ date: score.assessment.createdAt, score: score.score });
-    }
+      bySkill.get(skillCode)!.points.push({ date, score });
+    };
 
-    const recentAssessments = await this.prisma.assessment.findMany({
+    type RecentItem = {
+      id: string;
+      overallScore: number;
+      feedback: string;
+      createdAt: Date;
+    };
+    const recentItems: RecentItem[] = [];
+
+    // --- Activities: normalized AssessmentScore rows -------------------------------------
+    const activityScores = await this.prisma.assessmentScore.findMany({
+      where: { assessment: { attempt: { studentId } } },
+      include: { skill: true, assessment: { select: { createdAt: true } } },
+      orderBy: { assessment: { createdAt: 'asc' } },
+    });
+    for (const score of activityScores) {
+      addPoint(score.skill.code, score.assessment.createdAt, score.score);
+    }
+    const activityAssessments = await this.prisma.assessment.findMany({
       where: { attempt: { studentId } },
       orderBy: { createdAt: 'desc' },
       take: RECENT_ASSESSMENTS_LIMIT,
       select: { id: true, overallScore: true, feedback: true, createdAt: true },
     });
+    recentItems.push(...activityAssessments);
 
+    // --- Interviews: no per-skill breakdown, always scored under the INTERVIEW skill -----
+    const interviewAttempts = await this.prisma.interviewAttempt.findMany({
+      where: { studentId, status: 'COMPLETED', overallScore: { not: null } },
+      select: {
+        id: true,
+        overallScore: true,
+        completedAt: true,
+        createdAt: true,
+      },
+    });
+    for (const attempt of interviewAttempts) {
+      const date = attempt.completedAt ?? attempt.createdAt;
+      addPoint('INTERVIEW', date, attempt.overallScore!);
+      recentItems.push({
+        id: attempt.id,
+        overallScore: attempt.overallScore!,
+        feedback: 'Completed a mock interview.',
+        createdAt: date,
+      });
+    }
+
+    // --- Roleplay / Debate: feedback JSON holds the full assessment result ---------------
+    const roleplaySessions = await this.prisma.roleplaySession.findMany({
+      where: { studentId, status: 'COMPLETED', overallScore: { not: null } },
+      select: {
+        id: true,
+        overallScore: true,
+        feedback: true,
+        completedAt: true,
+        createdAt: true,
+      },
+    });
+    const debateSessions = await this.prisma.debateSession.findMany({
+      where: { studentId, status: 'COMPLETED', overallScore: { not: null } },
+      select: {
+        id: true,
+        overallScore: true,
+        feedback: true,
+        completedAt: true,
+        createdAt: true,
+      },
+    });
+    for (const session of [...roleplaySessions, ...debateSessions]) {
+      const date = session.completedAt ?? session.createdAt;
+      const parsed = parseAssessmentResultJson(session.feedback);
+      for (const skillScore of parsed?.skillScores ?? []) {
+        addPoint(skillScore.skillCode, date, skillScore.score);
+      }
+      recentItems.push({
+        id: session.id,
+        overallScore: session.overallScore!,
+        feedback: parsed?.feedback ?? 'Completed a practice session.',
+        createdAt: date,
+      });
+    }
+
+    // --- Writing: skill scores live in `scores`, narrative feedback in `feedback` --------
+    const writingSubmissions = await this.prisma.writingSubmission.findMany({
+      where: { studentId, status: 'COMPLETED', overallScore: { not: null } },
+      select: {
+        id: true,
+        overallScore: true,
+        feedback: true,
+        scores: true,
+        createdAt: true,
+      },
+    });
+    for (const submission of writingSubmissions) {
+      const skillScores = parseSkillScoresJson(submission.scores);
+      for (const skillScore of skillScores) {
+        addPoint(skillScore.skillCode, submission.createdAt, skillScore.score);
+      }
+      const feedback = parseWritingFeedbackJson(submission.feedback);
+      recentItems.push({
+        id: submission.id,
+        overallScore: submission.overallScore!,
+        feedback: feedback ?? 'Completed a writing submission.',
+        createdAt: submission.createdAt,
+      });
+    }
+
+    const recentAssessments = recentItems
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, RECENT_ASSESSMENTS_LIMIT);
+
+    // --- Weekly activity: completion timestamps across all 5 types -----------------------
     const since = new Date();
     since.setDate(since.getDate() - WEEKLY_ACTIVITY_DAYS);
-    const weeklyAttempts = await this.prisma.activityAttempt.findMany({
-      where: { studentId, createdAt: { gte: since } },
-      select: { createdAt: true },
-    });
-    const weeklyActivity = this.groupByDay(
-      weeklyAttempts.map((a) => a.createdAt),
-    );
+    const [
+      weeklyActivities,
+      weeklyInterviews,
+      weeklyRoleplays,
+      weeklyDebates,
+      weeklyWritings,
+    ] = await Promise.all([
+      this.prisma.activityAttempt.findMany({
+        where: { studentId, status: 'COMPLETED', completedAt: { gte: since } },
+        select: { completedAt: true },
+      }),
+      this.prisma.interviewAttempt.findMany({
+        where: { studentId, status: 'COMPLETED', completedAt: { gte: since } },
+        select: { completedAt: true },
+      }),
+      this.prisma.roleplaySession.findMany({
+        where: { studentId, status: 'COMPLETED', completedAt: { gte: since } },
+        select: { completedAt: true },
+      }),
+      this.prisma.debateSession.findMany({
+        where: { studentId, status: 'COMPLETED', completedAt: { gte: since } },
+        select: { completedAt: true },
+      }),
+      this.prisma.writingSubmission.findMany({
+        where: { studentId, status: 'COMPLETED', createdAt: { gte: since } },
+        select: { createdAt: true },
+      }),
+    ]);
+    const weeklyDates = [
+      ...weeklyActivities.map((a) => a.completedAt),
+      ...weeklyInterviews.map((a) => a.completedAt),
+      ...weeklyRoleplays.map((a) => a.completedAt),
+      ...weeklyDebates.map((a) => a.completedAt),
+      ...weeklyWritings.map((a) => a.createdAt),
+    ].filter((d): d is Date => d !== null);
+    const weeklyActivity = this.groupByDay(weeklyDates);
 
     return {
       skillHistory: Array.from(bySkill.values()),

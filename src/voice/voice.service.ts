@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { AiUsageService } from '../ai/usage/ai-usage.service.js';
 import { SpeechToTextService } from '../ai/stt/stt.service.js';
 import { TranscribeOptions } from '../ai/stt/stt.interface.js';
@@ -9,6 +9,8 @@ import { StorageService } from '../storage/storage.service.js';
 
 @Injectable()
 export class VoiceService {
+  private readonly logger = new Logger(VoiceService.name);
+
   constructor(
     private readonly sttService: SpeechToTextService,
     private readonly ttsService: TextToSpeechService,
@@ -63,12 +65,7 @@ export class VoiceService {
     audio: Buffer,
     mimeType: string,
   ) {
-    const { path } = await this.storageService.upload({
-      buffer: audio,
-      fileName: `recording.${this.extensionFromMimeType(mimeType)}`,
-      contentType: mimeType,
-      folder: 'voice-attempts',
-    });
+    const path = await this.storeRecording(audio, mimeType);
 
     const transcription = await this.sttService.transcribe(audio);
     await this.aiUsageService.record({
@@ -106,6 +103,37 @@ export class VoiceService {
         durationSeconds: feedbackAudio.durationSeconds,
       },
     };
+  }
+
+  /**
+   * Keeping the raw recording is best-effort: transcription and scoring only need the
+   * in-memory buffer, so a missing or failing storage backend must not block the student
+   * from getting their result. Returns null (no audio_url saved) when it can't be stored.
+   */
+  private async storeRecording(
+    audio: Buffer,
+    mimeType: string,
+  ): Promise<string | null> {
+    if (!this.storageService.isConfigured()) {
+      this.logger.warn(
+        'Storage not configured - scoring voice attempt without keeping the recording.',
+      );
+      return null;
+    }
+    try {
+      const { path } = await this.storageService.upload({
+        buffer: audio,
+        fileName: `recording.${this.extensionFromMimeType(mimeType)}`,
+        contentType: mimeType,
+        folder: 'voice-attempts',
+      });
+      return path;
+    } catch (err) {
+      this.logger.warn(
+        `Recording upload failed, continuing without it: ${String(err)}`,
+      );
+      return null;
+    }
   }
 
   private extensionFromMimeType(mimeType: string): string {
