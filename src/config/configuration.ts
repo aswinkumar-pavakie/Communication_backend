@@ -24,7 +24,7 @@ export interface AiConfig {
   mode: 'mock' | 'live';
   stt: { provider: string; apiKey?: string };
   llm: { provider: string; apiKey?: string };
-  tts: { provider: string; apiKey?: string };
+  tts: { provider: string; apiKey?: string; googleCredentialsPath?: string };
 }
 
 export interface StorageConfig {
@@ -86,6 +86,7 @@ export default (): Configuration => ({
     tts: {
       provider: process.env.TTS_PROVIDER ?? 'mock',
       apiKey: process.env.TTS_API_KEY,
+      googleCredentialsPath: process.env.GOOGLE_TTS_CREDENTIALS_PATH,
     },
   },
   storage: {

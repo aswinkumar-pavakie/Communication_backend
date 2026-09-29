@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Configuration } from '../../config/configuration.js';
 import { MockSpeechToTextProvider } from './providers/mock-speech-to-text.provider.js';
+import { GroqSpeechToTextProvider } from './providers/groq-speech-to-text.provider.js';
 import {
   SpeechToTextProvider,
   TranscribeOptions,
@@ -15,11 +16,12 @@ import {
  */
 @Injectable()
 export class SpeechToTextService {
-  private readonly providerName: string;
+  readonly providerName: string;
 
   constructor(
     private readonly configService: ConfigService<Configuration, true>,
     private readonly mockProvider: MockSpeechToTextProvider,
+    private readonly groqProvider: GroqSpeechToTextProvider,
   ) {
     const ai = this.configService.get('ai', { infer: true });
     this.providerName = ai.mode === 'mock' ? 'mock' : ai.stt.provider;
@@ -36,8 +38,11 @@ export class SpeechToTextService {
     if (this.providerName === 'mock') {
       return this.mockProvider;
     }
+    if (this.providerName === 'groq') {
+      return this.groqProvider;
+    }
 
-    // IMPLEMENTED: mock provider. PLANNED: real provider adapters (Whisper, Deepgram, ...).
+    // IMPLEMENTED: mock, groq. PLANNED: further provider adapters as needed.
     throw new ServiceUnavailableException(
       `STT provider "${this.providerName}" is not implemented yet. Set STT_PROVIDER=mock or AI_MODE=mock for local development.`,
     );

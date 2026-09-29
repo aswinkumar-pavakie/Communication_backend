@@ -27,6 +27,7 @@ export const validationSchema = Joi.object({
 
   TTS_PROVIDER: Joi.string().default('mock'),
   TTS_API_KEY: Joi.string().allow('').optional(),
+  GOOGLE_TTS_CREDENTIALS_PATH: Joi.string().allow('').optional(),
 
   STORAGE_PROVIDER: Joi.string().default('supabase'),
   SUPABASE_URL: Joi.string().allow('').optional(),

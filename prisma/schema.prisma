@@ -180,6 +180,9 @@ model StudentProfile {
   profileImage       String?  @map("profile_image")
   // Nullable placeholder for future college ERP integration. Not used yet.
   externalStudentId  String?  @unique @map("external_student_id")
+  currentStreak      Int      @default(0) @map("current_streak")
+  longestStreak      Int      @default(0) @map("longest_streak")
+  lastStreakDate     DateTime? @map("last_streak_date") @db.Date
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 

@@ -23,6 +23,7 @@ import { ReportsModule } from './reports/reports.module.js';
 import { RoleplayModule } from './roleplay/roleplay.module.js';
 import { SkillsModule } from './skills/skills.module.js';
 import { StorageModule } from './storage/storage.module.js';
+import { StreaksModule } from './streaks/streaks.module.js';
 import { StudentsModule } from './students/students.module.js';
 import { UsersModule } from './users/users.module.js';
 import { VoiceModule } from './voice/voice.module.js';
@@ -61,6 +62,7 @@ import { WritingModule } from './writing/writing.module.js';
     AssessmentsModule,
     ProgressModule,
     RecommendationsModule,
+    StreaksModule,
     DashboardModule,
     InterviewsModule,
     RoleplayModule,

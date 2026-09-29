@@ -41,6 +41,9 @@ describe('Communication Assistant API (e2e)', () => {
     batch: null,
     profileImage: null,
     externalStudentId: null,
+    currentStreak: 0,
+    longestStreak: 0,
+    lastStreakDate: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -109,6 +112,18 @@ describe('Communication Assistant API (e2e)', () => {
         args?.where?.id === testStudentProfile.id
           ? { ...testStudentProfile, user: { email: testUser.email } }
           : null,
+    );
+    // StreaksService reads/writes the student profile via findUniqueOrThrow - keep this
+    // in sync with studentProfile.update so streak state persists across the test run.
+    let currentProfile = { ...testStudentProfile };
+    prisma.studentProfile.findUniqueOrThrow.mockImplementation(
+      async () => currentProfile,
+    );
+    prisma.studentProfile.update.mockImplementation(
+      async (args: { data?: Record<string, unknown> }) => {
+        currentProfile = { ...currentProfile, ...args?.data };
+        return currentProfile;
+      },
     );
   });
 

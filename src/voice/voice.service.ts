@@ -26,7 +26,7 @@ export class VoiceService {
 
     await this.aiUsageService.record({
       studentId,
-      provider: 'mock',
+      provider: this.sttService.providerName,
       service: 'STT',
       requestType: 'transcribe',
       audioDurationSeconds: result.durationSeconds,
@@ -44,7 +44,7 @@ export class VoiceService {
 
     await this.aiUsageService.record({
       studentId,
-      provider: 'mock',
+      provider: this.ttsService.providerName,
       service: 'TTS',
       requestType: 'synthesize',
       audioDurationSeconds: result.durationSeconds,
@@ -73,7 +73,7 @@ export class VoiceService {
     const transcription = await this.sttService.transcribe(audio);
     await this.aiUsageService.record({
       studentId,
-      provider: 'mock',
+      provider: this.sttService.providerName,
       service: 'STT',
       requestType: 'analyze',
       audioDurationSeconds: transcription.durationSeconds,
@@ -90,7 +90,7 @@ export class VoiceService {
     const feedbackAudio = await this.ttsService.synthesize(assessment.feedback);
     await this.aiUsageService.record({
       studentId,
-      provider: 'mock',
+      provider: this.ttsService.providerName,
       service: 'TTS',
       requestType: 'analyze-feedback',
       audioDurationSeconds: feedbackAudio.durationSeconds,

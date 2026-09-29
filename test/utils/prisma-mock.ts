@@ -14,7 +14,9 @@ type AsyncMock = jest.Mock<(...args: never[]) => Promise<unknown>>;
 const MODEL_METHODS = [
   'findMany',
   'findUnique',
+  'findUniqueOrThrow',
   'findFirst',
+  'findFirstOrThrow',
   'create',
   'createMany',
   'update',

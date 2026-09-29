@@ -3,10 +3,12 @@ import { ActivityType } from '#prisma-client';
 import { AssessmentContext } from '../ai/assessment/assessment.interface.js';
 import { AssessmentService } from '../ai/assessment/assessment.service.js';
 import { AssessmentsService } from '../assessments/assessments.service.js';
+import { COMPLETION_TRANSACTION_OPTIONS } from '../common/constants/prisma-transaction.constants.js';
 import { PaginatedResult } from '../common/types/api-response.type.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ProgressService } from '../progress/progress.service.js';
 import { RecommendationsService } from '../recommendations/recommendations.service.js';
+import { StreaksService } from '../streaks/streaks.service.js';
 
 const ACTIVITY_TYPE_TO_ASSESSMENT_CONTEXT: Record<
   ActivityType,
@@ -32,6 +34,7 @@ export class AttemptsService {
     private readonly assessmentsService: AssessmentsService,
     private readonly progressService: ProgressService,
     private readonly recommendationsService: RecommendationsService,
+    private readonly streaksService: StreaksService,
   ) {}
 
   async createTextAttempt(
@@ -124,9 +127,10 @@ export class AttemptsService {
         tx,
       );
       await this.recommendationsService.refreshForStudent(studentId, tx);
+      await this.streaksService.recordCompletion(studentId, tx);
 
       return { attempt: completedAttempt, assessment: persistedAssessment };
-    });
+    }, COMPLETION_TRANSACTION_OPTIONS);
   }
 
   async findAllForActivity(

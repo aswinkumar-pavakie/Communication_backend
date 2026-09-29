@@ -4,10 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Interview, Prisma } from '#prisma-client';
+import { COMPLETION_TRANSACTION_OPTIONS } from '../common/constants/prisma-transaction.constants.js';
 import { PaginatedResult } from '../common/types/api-response.type.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ProgressService } from '../progress/progress.service.js';
 import { RecommendationsService } from '../recommendations/recommendations.service.js';
+import { StreaksService } from '../streaks/streaks.service.js';
 import { InterviewAssessmentService } from './interview-assessment.service.js';
 import { InterviewQuestionService } from './interview-question.service.js';
 import { InterviewQueryDto } from './dto/interview-query.dto.js';
@@ -20,6 +22,7 @@ export class InterviewsService {
     private readonly assessmentService: InterviewAssessmentService,
     private readonly progressService: ProgressService,
     private readonly recommendationsService: RecommendationsService,
+    private readonly streaksService: StreaksService,
   ) {}
 
   async findAll(query: InterviewQueryDto): Promise<PaginatedResult<Interview>> {
@@ -167,9 +170,10 @@ export class InterviewsService {
         tx,
       );
       await this.recommendationsService.refreshForStudent(studentId, tx);
+      await this.streaksService.recordCompletion(studentId, tx);
 
       return completed;
-    });
+    }, COMPLETION_TRANSACTION_OPTIONS);
   }
 
   async getResult(studentId: string, interviewId: string, attemptId?: string) {

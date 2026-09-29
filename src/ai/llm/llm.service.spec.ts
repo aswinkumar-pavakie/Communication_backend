@@ -16,11 +16,19 @@ function buildConfig(
   } as unknown as ConfigService<Configuration, true>;
 }
 
+function fakeGroqProvider(content: string) {
+  return {
+    name: 'groq',
+    generate: jest.fn<() => Promise<unknown>>().mockResolvedValue({ content }),
+  };
+}
+
 describe('LanguageModelService', () => {
   it('delegates to the mock provider when AI_MODE=mock', async () => {
     const service = new LanguageModelService(
       buildConfig(),
       new MockLanguageModelProvider(),
+      fakeGroqProvider('unused') as never,
     );
 
     const result = await service.generate({
@@ -31,10 +39,28 @@ describe('LanguageModelService', () => {
     expect(result.content.length).toBeGreaterThan(0);
   });
 
+  it('delegates to the groq provider when LLM_PROVIDER=groq', async () => {
+    const groqProvider = fakeGroqProvider('a real reply');
+    const service = new LanguageModelService(
+      buildConfig({ mode: 'live', provider: 'groq' }),
+      new MockLanguageModelProvider(),
+      groqProvider as never,
+    );
+
+    const result = await service.generate({
+      systemPrompt: 'test',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    expect(result.content).toBe('a real reply');
+    expect(groqProvider.generate).toHaveBeenCalledTimes(1);
+  });
+
   it('throws a clear, controlled error for an unimplemented live provider', async () => {
     const service = new LanguageModelService(
       buildConfig({ mode: 'live', provider: 'openai' }),
       new MockLanguageModelProvider(),
+      fakeGroqProvider('unused') as never,
     );
 
     await expect(

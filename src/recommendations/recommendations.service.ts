@@ -55,7 +55,7 @@ export class RecommendationsService {
       where: {
         studentId,
         status: 'PENDING',
-        skillId: { notIn: lowSkillIds.length ? lowSkillIds : ['__none__'] },
+        skillId: { notIn: lowSkillIds },
       },
     });
 

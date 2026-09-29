@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ProgressService } from '../progress/progress.service.js';
 import { RecommendationsService } from '../recommendations/recommendations.service.js';
+import { StreaksService } from '../streaks/streaks.service.js';
 
 const TODAY_ACTIVITY_LIMIT = 5;
 const RECOMMENDATION_LIMIT = 5;
@@ -13,6 +14,7 @@ export class DashboardService {
     private readonly prisma: PrismaService,
     private readonly progressService: ProgressService,
     private readonly recommendationsService: RecommendationsService,
+    private readonly streaksService: StreaksService,
   ) {}
 
   async getDashboard(studentId: string) {
@@ -47,6 +49,7 @@ export class DashboardService {
       overallScore,
       skills,
     );
+    const streak = await this.streaksService.getSummary(studentId);
 
     return {
       student: {
@@ -78,6 +81,7 @@ export class DashboardService {
         completedAt: a.completedAt,
       })),
       placementReadiness,
+      streak,
     };
   }
 

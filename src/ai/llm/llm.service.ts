@@ -7,14 +7,16 @@ import {
   LanguageModelProvider,
 } from './llm.interface.js';
 import { MockLanguageModelProvider } from './providers/mock-language-model.provider.js';
+import { GroqLanguageModelProvider } from './providers/groq-language-model.provider.js';
 
 @Injectable()
 export class LanguageModelService {
-  private readonly providerName: string;
+  readonly providerName: string;
 
   constructor(
     private readonly configService: ConfigService<Configuration, true>,
     private readonly mockProvider: MockLanguageModelProvider,
+    private readonly groqProvider: GroqLanguageModelProvider,
   ) {
     const ai = this.configService.get('ai', { infer: true });
     this.providerName = ai.mode === 'mock' ? 'mock' : ai.llm.provider;
@@ -28,8 +30,11 @@ export class LanguageModelService {
     if (this.providerName === 'mock') {
       return this.mockProvider;
     }
+    if (this.providerName === 'groq') {
+      return this.groqProvider;
+    }
 
-    // IMPLEMENTED: mock provider. PLANNED: real provider adapters (OpenAI, Anthropic, ...).
+    // IMPLEMENTED: mock, groq. PLANNED: further provider adapters as needed.
     throw new ServiceUnavailableException(
       `LLM provider "${this.providerName}" is not implemented yet. Set LLM_PROVIDER=mock or AI_MODE=mock for local development.`,
     );

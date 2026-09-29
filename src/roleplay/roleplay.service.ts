@@ -8,10 +8,12 @@ import { AssessmentContext } from '../ai/assessment/assessment.interface.js';
 import { AssessmentService } from '../ai/assessment/assessment.service.js';
 import { LlmMessage, LlmMessageRole } from '../ai/llm/llm.interface.js';
 import { LanguageModelService } from '../ai/llm/llm.service.js';
+import { COMPLETION_TRANSACTION_OPTIONS } from '../common/constants/prisma-transaction.constants.js';
 import { PaginatedResult } from '../common/types/api-response.type.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ProgressService } from '../progress/progress.service.js';
 import { RecommendationsService } from '../recommendations/recommendations.service.js';
+import { StreaksService } from '../streaks/streaks.service.js';
 import { RoleplayQueryDto } from './dto/roleplay-query.dto.js';
 import { buildRoleplaySystemPrompt } from './prompts/roleplay-system.prompt.js';
 
@@ -30,6 +32,7 @@ export class RoleplayService {
     private readonly assessmentService: AssessmentService,
     private readonly progressService: ProgressService,
     private readonly recommendationsService: RecommendationsService,
+    private readonly streaksService: StreaksService,
   ) {}
 
   async findAll(query: RoleplayQueryDto): Promise<PaginatedResult<Roleplay>> {
@@ -179,9 +182,10 @@ export class RoleplayService {
         tx,
       );
       await this.recommendationsService.refreshForStudent(studentId, tx);
+      await this.streaksService.recordCompletion(studentId, tx);
 
       return completed;
-    });
+    }, COMPLETION_TRANSACTION_OPTIONS);
   }
 
   async getSession(studentId: string, sessionId: string) {

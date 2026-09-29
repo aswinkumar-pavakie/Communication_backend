@@ -32,6 +32,7 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@google-cloud/text-to-speech": "^7.1.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "4.0.4",
     "@nestjs/core": "^11.0.1",
@@ -96,9 +97,16 @@
     ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
-    "extensionsToTreatAsEsm": [".ts"],
+    "extensionsToTreatAsEsm": [
+      ".ts"
+    ],
     "transform": {
-      "^.+\\.ts$": ["ts-jest", { "useESM": true }]
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "useESM": true
+        }
+      ]
     },
     "moduleNameMapper": {
       "^(\\.{1,2}/.*)\\.js$": "$1",

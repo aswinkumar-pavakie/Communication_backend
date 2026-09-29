@@ -2,10 +2,12 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, WritingActivity } from '#prisma-client';
 import { AssessmentContext } from '../ai/assessment/assessment.interface.js';
 import { AssessmentService } from '../ai/assessment/assessment.service.js';
+import { COMPLETION_TRANSACTION_OPTIONS } from '../common/constants/prisma-transaction.constants.js';
 import { PaginatedResult } from '../common/types/api-response.type.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ProgressService } from '../progress/progress.service.js';
 import { RecommendationsService } from '../recommendations/recommendations.service.js';
+import { StreaksService } from '../streaks/streaks.service.js';
 import { WritingQueryDto } from './dto/writing-query.dto.js';
 
 const WRITING_SKILL_CODES = [
@@ -22,6 +24,7 @@ export class WritingService {
     private readonly assessmentService: AssessmentService,
     private readonly progressService: ProgressService,
     private readonly recommendationsService: RecommendationsService,
+    private readonly streaksService: StreaksService,
   ) {}
 
   async findAll(
@@ -99,9 +102,10 @@ export class WritingService {
         tx,
       );
       await this.recommendationsService.refreshForStudent(studentId, tx);
+      await this.streaksService.recordCompletion(studentId, tx);
 
       return submission;
-    });
+    }, COMPLETION_TRANSACTION_OPTIONS);
   }
 
   findSubmissions(
