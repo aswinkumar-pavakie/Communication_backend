@@ -199,7 +199,9 @@ describe('AuthService', () => {
             revokedAt: null,
             expiresAt: new Date(Date.now() + 100_000),
           }),
-          update: jest.fn<() => Promise<unknown>>().mockResolvedValue({}),
+          updateMany: jest
+            .fn<() => Promise<unknown>>()
+            .mockResolvedValue({ count: 1 }),
           create: jest.fn<() => Promise<unknown>>().mockResolvedValue({}),
         },
       };
@@ -220,10 +222,45 @@ describe('AuthService', () => {
       );
       const result = await service.refresh('raw-refresh-token');
 
-      expect(prisma.refreshToken.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'token-1' } }),
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'token-1', revokedAt: null } }),
       );
       expect(result.accessToken).toBe('signed.jwt.token');
+    });
+
+    it('rejects the second of two concurrent refreshes with the same token', async () => {
+      const storedHash = await bcrypt.hash('raw-refresh-token', 10);
+      const prisma = {
+        refreshToken: {
+          findUnique: jest.fn<() => Promise<unknown>>().mockResolvedValue({
+            id: 'token-1',
+            userId: 'user-1',
+            tokenHash: storedHash,
+            revokedAt: null,
+            expiresAt: new Date(Date.now() + 100_000),
+          }),
+          // The other request already revoked it between our read and our claim.
+          updateMany: jest
+            .fn<() => Promise<unknown>>()
+            .mockResolvedValue({ count: 0 }),
+        },
+      };
+      const usersService = {
+        findById: jest.fn<() => Promise<unknown>>().mockResolvedValue({
+          id: 'user-1',
+          isActive: true,
+        }),
+      };
+      const service = new AuthService(
+        prisma as never,
+        usersService as never,
+        buildJwtService(),
+        buildConfigService(),
+      );
+
+      await expect(service.refresh('raw-refresh-token')).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
     });
 
     it('rejects a refresh token that has already been revoked', async () => {

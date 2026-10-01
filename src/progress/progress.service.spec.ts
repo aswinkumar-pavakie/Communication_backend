@@ -359,7 +359,8 @@ describe('ProgressService', () => {
 
     it('merges weekly-activity dates from all 5 completion types and groups them by day', async () => {
       const day1 = new Date('2026-09-20T08:00:00Z');
-      const day1Later = new Date('2026-09-20T20:00:00Z');
+      // 20:30 IST - still the same local day (days are grouped in APP_TIMEZONE, not UTC).
+      const day1Later = new Date('2026-09-20T15:00:00Z');
       const day2 = new Date('2026-09-21T08:00:00Z');
       const prisma = buildPrisma({
         weeklyActivityAttempts: [{ completedAt: day1 }],

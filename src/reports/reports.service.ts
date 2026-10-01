@@ -52,7 +52,20 @@ export class ReportsService {
     return report;
   }
 
-  private async ensureFreshReport(studentId: string): Promise<void> {
+  /** In-flight freshness checks per student, so concurrent list calls generate one report, not two. */
+  private readonly refreshing = new Map<string, Promise<void>>();
+
+  private ensureFreshReport(studentId: string): Promise<void> {
+    const inFlight = this.refreshing.get(studentId);
+    if (inFlight) return inFlight;
+    const run = this.refreshIfStale(studentId).finally(() =>
+      this.refreshing.delete(studentId),
+    );
+    this.refreshing.set(studentId, run);
+    return run;
+  }
+
+  private async refreshIfStale(studentId: string): Promise<void> {
     const latest = await this.prisma.report.findFirst({
       where: { studentId },
       orderBy: { createdAt: 'desc' },

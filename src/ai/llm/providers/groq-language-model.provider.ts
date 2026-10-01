@@ -55,7 +55,8 @@ export class GroqLanguageModelProvider implements LanguageModelProvider {
       model: GROQ_MODEL,
       messages,
       temperature: request.temperature ?? 0.7,
-      max_completion_tokens: request.maxTokens ?? 1024,
+      // Reasoning models spend part of this budget thinking; 1024 could truncate the JSON.
+      max_completion_tokens: request.maxTokens ?? 2048,
     };
     if (request.responseFormat === 'json') {
       body.response_format = { type: 'json_object' };
@@ -65,6 +66,8 @@ export class GroqLanguageModelProvider implements LanguageModelProvider {
     try {
       response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
         method: 'POST',
+        // Never hang a student's request on a stuck upstream call.
+        signal: AbortSignal.timeout(60_000),
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',

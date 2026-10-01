@@ -8,6 +8,11 @@ import { AssessmentContext } from '../ai/assessment/assessment.interface.js';
 import { AssessmentService } from '../ai/assessment/assessment.service.js';
 import { LlmMessage, LlmMessageRole } from '../ai/llm/llm.interface.js';
 import { LanguageModelService } from '../ai/llm/llm.service.js';
+import {
+  boundedTranscript,
+  LLM_HISTORY_WINDOW,
+  MAX_STUDENT_TURNS_PER_SESSION,
+} from '../common/constants/chat-session.constants.js';
 import { COMPLETION_TRANSACTION_OPTIONS } from '../common/constants/prisma-transaction.constants.js';
 import { PaginatedResult } from '../common/types/api-response.type.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -114,14 +119,25 @@ export class DebatesService {
     const session = await this.getActiveSessionOrThrow(studentId, sessionId);
     const debate = await this.findOne(session.debateId);
 
-    await this.prisma.debateMessage.create({
-      data: { sessionId: session.id, role: 'USER', content: message },
+    const studentTurns = await this.prisma.debateMessage.count({
+      where: { sessionId: session.id, role: 'USER' },
     });
+    if (studentTurns >= MAX_STUDENT_TURNS_PER_SESSION) {
+      throw new BadRequestException(
+        `You've reached ${MAX_STUDENT_TURNS_PER_SESSION} replies in this debate - tap Finish to get your feedback.`,
+      );
+    }
 
-    const history = await this.prisma.debateMessage.findMany({
+    // Newest window only (fetched newest-first, then put back in order), plus the new reply.
+    const recent = await this.prisma.debateMessage.findMany({
       where: { sessionId: session.id },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
+      take: LLM_HISTORY_WINDOW - 1,
     });
+    const history = [
+      ...recent.reverse(),
+      { role: 'USER' as const, content: message },
+    ];
 
     const systemPrompt = buildDebateSystemPrompt(
       debate.topic,
@@ -139,13 +155,21 @@ export class DebatesService {
       temperature: 0.8,
     });
 
-    return this.prisma.debateMessage.create({
-      data: {
-        sessionId: session.id,
-        role: 'ASSISTANT',
-        content: result.content,
-      },
-    });
+    // Saved together only once the reply exists, so a failed LLM call never leaves an
+    // unanswered student message behind in the history.
+    const [, reply] = await this.prisma.$transaction([
+      this.prisma.debateMessage.create({
+        data: { sessionId: session.id, role: 'USER', content: message },
+      }),
+      this.prisma.debateMessage.create({
+        data: {
+          sessionId: session.id,
+          role: 'ASSISTANT',
+          content: result.content,
+        },
+      }),
+    ]);
+    return reply;
   }
 
   async completeSession(studentId: string, sessionId: string) {
@@ -163,7 +187,7 @@ export class DebatesService {
       );
     }
 
-    const transcript = studentMessages.map((m) => m.content).join('\n');
+    const transcript = boundedTranscript(studentMessages.map((m) => m.content));
 
     const result = await this.assessmentService.assess({
       context: AssessmentContext.DEBATE,
@@ -174,6 +198,16 @@ export class DebatesService {
     });
 
     return this.prisma.$transaction(async (tx) => {
+      // Status-guarded claim: two concurrent /complete calls can't both apply progress.
+      const claimed = await tx.debateSession.updateMany({
+        where: { id: session.id, status: 'STARTED' },
+        data: { status: 'COMPLETED' },
+      });
+      if (claimed.count === 0) {
+        return tx.debateSession.findUniqueOrThrow({
+          where: { id: session.id },
+        });
+      }
       const completed = await tx.debateSession.update({
         where: { id: session.id },
         data: {

@@ -148,8 +148,9 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  studentProfile StudentProfile?
-  refreshTokens  RefreshToken[]
+  studentProfile     StudentProfile?
+  refreshTokens      RefreshToken[]
+  passwordResetCodes PasswordResetCode[]
 
   @@map("users")
 }
@@ -166,6 +167,22 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+/// One-time 6-digit code emailed for "Forgot password". Only a bcrypt hash is stored.
+model PasswordResetCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @map("code_hash")
+  expiresAt DateTime  @map("expires_at")
+  attempts  Int       @default(0)
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_codes")
 }
 
 model StudentProfile {
@@ -198,6 +215,7 @@ model StudentProfile {
   conversations     Conversation[]
   voiceSessions     VoiceSession[]
   aiUsageLogs       AiUsageLog[]
+  streakReminder    StreakReminderSetting?
 
   @@map("student_profiles")
 }
@@ -666,4 +684,18 @@ model AiUsageLog {
   @@index([studentId])
   @@index([provider, service])
   @@map("ai_usage_logs")
+}
+
+/// Evening "your streak ends at midnight" email. Kept in its own table (not on StudentProfile)
+/// so adding it never changes the columns every other student-profile query selects.
+/// No row = reminders on (the default).
+model StreakReminderSetting {
+  studentId    String    @id @map("student_id") @db.Uuid
+  emailEnabled Boolean   @default(true) @map("email_enabled")
+  lastSentDate DateTime? @map("last_sent_date") @db.Date
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("streak_reminder_settings")
 }

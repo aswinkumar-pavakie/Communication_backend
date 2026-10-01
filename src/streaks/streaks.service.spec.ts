@@ -122,6 +122,7 @@ describe('StreaksService', () => {
       await expect(service.getSummary('student-1')).resolves.toEqual({
         currentStreak: 5,
         longestStreak: 8,
+        practicedToday: true,
       });
     });
 
@@ -137,6 +138,7 @@ describe('StreaksService', () => {
       await expect(service.getSummary('student-1')).resolves.toEqual({
         currentStreak: 5,
         longestStreak: 8,
+        practicedToday: false,
       });
     });
 
@@ -152,7 +154,67 @@ describe('StreaksService', () => {
       await expect(service.getSummary('student-1')).resolves.toEqual({
         currentStreak: 0,
         longestStreak: 8,
+        practicedToday: false,
       });
     });
+  });
+});
+
+describe('StreaksService.getCalendar', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('counts completions per local (IST) day across all practice types for the month', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-30T06:00:00Z') });
+    const stamps = (isoList: string[], field = 'completedAt') =>
+      jest
+        .fn<() => Promise<unknown>>()
+        .mockResolvedValue(isoList.map((iso) => ({ [field]: new Date(iso) })));
+    const prisma = {
+      studentProfile: {
+        findUniqueOrThrow: jest.fn<() => Promise<unknown>>().mockResolvedValue({
+          currentStreak: 2,
+          longestStreak: 4,
+          lastStreakDate: new Date('2026-09-30T00:00:00Z'),
+        }),
+      },
+      // 20:00 UTC on the 28th is 01:30 IST on the 29th.
+      activityAttempt: {
+        findMany: stamps(['2026-09-28T20:00:00Z', '2026-09-29T05:00:00Z']),
+      },
+      interviewAttempt: { findMany: stamps(['2026-09-30T04:00:00Z']) },
+      roleplaySession: { findMany: stamps([]) },
+      debateSession: { findMany: stamps(['2026-09-02T10:00:00Z']) },
+      writingSubmission: {
+        findMany: stamps(['2026-09-30T05:00:00Z'], 'createdAt'),
+      },
+    };
+
+    const result = await new StreaksService(prisma as never).getCalendar(
+      's1',
+      '2026-09',
+    );
+
+    expect(result.days).toEqual([
+      { date: '2026-09-02', count: 1 },
+      { date: '2026-09-29', count: 2 },
+      { date: '2026-09-30', count: 2 },
+    ]);
+    expect(result).toMatchObject({
+      month: '2026-09',
+      today: '2026-09-30',
+      currentStreak: 2,
+      longestStreak: 4,
+    });
+    // Month boundaries are local midnight in IST.
+    expect(prisma.activityAttempt.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          completedAt: {
+            gte: new Date('2026-08-31T18:30:00.000Z'),
+            lt: new Date('2026-09-30T18:30:00.000Z'),
+          },
+        }),
+      }),
+    );
   });
 });

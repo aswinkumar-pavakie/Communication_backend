@@ -7,6 +7,7 @@ import {
   Get,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../common/types/authenticated-user.type.js';
@@ -14,12 +15,21 @@ import { AuthService } from './auth.service.js';
 import { AuthResponseDto, UserProfileDto } from './dto/auth-response.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
+import {
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto/password.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
+import { PasswordService } from './password.service.js';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly passwordService: PasswordService,
+  ) {}
 
   @Public()
   @Post('register')
@@ -44,6 +54,60 @@ export class AuthController {
   })
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto.refreshToken);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 15 * 60_000 } })
+  @ApiOperation({
+    summary:
+      'Email a 6-digit password reset code. Always returns the same response, whether or not the email has an account.',
+  })
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.passwordService.requestReset(dto.email);
+    return {
+      message:
+        'If an account exists for that email, a reset code is on its way.',
+    };
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 15 * 60_000 } })
+  @ApiOperation({
+    summary:
+      'Set a new password using the emailed code (signs out all devices).',
+  })
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.passwordService.resetPassword(
+      dto.email,
+      dto.code,
+      dto.newPassword,
+    );
+    return {
+      message: 'Password updated. You can log in with your new password.',
+    };
+  }
+
+  @ApiBearerAuth()
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 15 * 60_000 } })
+  @ApiOperation({
+    summary:
+      'Change password while signed in. Other devices are signed out; returns fresh tokens for this one.',
+  })
+  changePassword(
+    @CurrentUser('id') userId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.passwordService.changePassword(
+      userId,
+      dto.currentPassword,
+      dto.newPassword,
+    );
   }
 
   @ApiBearerAuth()

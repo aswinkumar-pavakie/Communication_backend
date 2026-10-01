@@ -61,6 +61,72 @@ describe('GroqSpeechToTextProvider', () => {
     expect(form.get('language')).toBe('en');
   });
 
+  it('requests word timings and maps words + silence probability', async () => {
+    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        text: 'hi there',
+        duration: 1,
+        segments: [
+          {
+            text: 'hi there',
+            start: 0,
+            end: 1,
+            avg_logprob: -0.2,
+            no_speech_prob: 0.02,
+          },
+        ],
+        words: [
+          { word: 'hi', start: 0, end: 0.3 },
+          { word: 'there', start: 0.4, end: 0.9 },
+        ],
+      }),
+    } as Response);
+    globalThis.fetch = fetchMock;
+
+    const result = await new GroqSpeechToTextProvider(
+      buildConfig('test-key'),
+    ).transcribe(Buffer.alloc(10));
+
+    const form = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData;
+    expect(form.getAll('timestamp_granularities[]')).toEqual([
+      'segment',
+      'word',
+    ]);
+    expect(result.words).toEqual([
+      { word: 'hi', startSeconds: 0, endSeconds: 0.3 },
+      { word: 'there', startSeconds: 0.4, endSeconds: 0.9 },
+    ]);
+    expect(result.segments?.[0].noSpeechProbability).toBe(0.02);
+  });
+
+  it('retries without word timings if the API rejects them', async () => {
+    const fetchMock = jest
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => 'bad',
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ text: 'fallback transcript' }),
+      } as Response);
+    globalThis.fetch = fetchMock;
+
+    const result = await new GroqSpeechToTextProvider(
+      buildConfig('test-key'),
+    ).transcribe(Buffer.alloc(10));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryForm = (fetchMock.mock.calls[1][1] as RequestInit)
+      .body as FormData;
+    expect(retryForm.getAll('timestamp_granularities[]')).toEqual([]);
+    expect(result.transcript).toBe('fallback transcript');
+  });
+
   it('throws a controlled error when Groq responds with a non-2xx status', async () => {
     globalThis.fetch = jest.fn<typeof fetch>().mockResolvedValue({
       ok: false,

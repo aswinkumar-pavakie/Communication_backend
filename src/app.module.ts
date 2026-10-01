@@ -23,6 +23,7 @@ import { ReportsModule } from './reports/reports.module.js';
 import { RoleplayModule } from './roleplay/roleplay.module.js';
 import { SkillsModule } from './skills/skills.module.js';
 import { StorageModule } from './storage/storage.module.js';
+import { EmailModule } from './email/email.module.js';
 import { StreaksModule } from './streaks/streaks.module.js';
 import { StudentsModule } from './students/students.module.js';
 import { UsersModule } from './users/users.module.js';
@@ -63,6 +64,7 @@ import { WritingModule } from './writing/writing.module.js';
     ProgressModule,
     RecommendationsModule,
     StreaksModule,
+    EmailModule,
     DashboardModule,
     InterviewsModule,
     RoleplayModule,

@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { ProgressService } from '../progress/progress.service.js';
 import { RecommendationsService } from '../recommendations/recommendations.service.js';
 import { StreaksService } from '../streaks/streaks.service.js';
+import { startOfAppDay } from '../common/utils/app-day.js';
 
 const TODAY_ACTIVITY_LIMIT = 5;
 const RECOMMENDATION_LIMIT = 5;
@@ -95,8 +96,7 @@ export class DashboardService {
       .map((r) => r.activity?.id)
       .filter((id): id is string => Boolean(id));
 
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    const startOfToday = startOfAppDay();
 
     const completedTodayIds = (
       await this.prisma.activityAttempt.findMany({

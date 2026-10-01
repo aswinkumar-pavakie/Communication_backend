@@ -93,7 +93,10 @@ export class InterviewsService {
   ) {
     const attempt = await this.prisma.interviewAttempt.findFirst({
       where: { id: attemptId, studentId },
-      include: { interview: true },
+      include: {
+        interview: true,
+        answers: { select: { interviewQuestionId: true } },
+      },
     });
     if (!attempt) {
       throw new NotFoundException('Interview attempt not found.');
@@ -104,7 +107,17 @@ export class InterviewsService {
       );
     }
 
-    const question = await this.questionService.getByIdOrThrow(questionId);
+    // The question must belong to this interview and not already be answered in this
+    // attempt - otherwise a student could re-answer an easy question to inflate the average.
+    const question = await this.questionService.getForInterviewOrThrow(
+      questionId,
+      attempt.interviewId,
+    );
+    if (attempt.answers.some((a) => a.interviewQuestionId === question.id)) {
+      throw new BadRequestException(
+        'You have already answered this question in this attempt.',
+      );
+    }
 
     const result = await this.assessmentService.assessAnswer(
       attempt.interview,
@@ -143,14 +156,28 @@ export class InterviewsService {
     }
 
     const scoredAnswers = attempt.answers.filter((a) => a.score !== null);
-    const overallScore = scoredAnswers.length
-      ? Math.round(
-          scoredAnswers.reduce((sum, a) => sum + (a.score ?? 0), 0) /
-            scoredAnswers.length,
-        )
-      : 0;
+    if (scoredAnswers.length === 0) {
+      // Finishing an empty attempt would record a 0 into the INTERVIEW skill and credit the streak.
+      throw new BadRequestException(
+        'Answer at least one question before finishing the interview.',
+      );
+    }
+    const overallScore = Math.round(
+      scoredAnswers.reduce((sum, a) => sum + (a.score ?? 0), 0) /
+        scoredAnswers.length,
+    );
 
     return this.prisma.$transaction(async (tx) => {
+      // Status-guarded claim: two concurrent /complete calls can't both apply progress.
+      const claimed = await tx.interviewAttempt.updateMany({
+        where: { id: attempt.id, status: 'STARTED' },
+        data: { status: 'COMPLETED' },
+      });
+      if (claimed.count === 0) {
+        return tx.interviewAttempt.findUniqueOrThrow({
+          where: { id: attempt.id },
+        });
+      }
       const completed = await tx.interviewAttempt.update({
         where: { id: attempt.id },
         data: {

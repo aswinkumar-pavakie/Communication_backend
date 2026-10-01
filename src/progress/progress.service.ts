@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, ProgressTrend, SkillCode } from '#prisma-client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { appDayKey } from '../common/utils/app-day.js';
 
 export interface SkillScoreInput {
   skillCode: string;
@@ -342,7 +343,7 @@ export class ProgressService {
   private groupByDay(dates: Date[]): { date: string; count: number }[] {
     const counts = new Map<string, number>();
     for (const date of dates) {
-      const key = date.toISOString().slice(0, 10);
+      const key = appDayKey(date);
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return Array.from(counts.entries())

@@ -48,6 +48,8 @@ export class GroqTextToSpeechProvider implements TextToSpeechProvider {
     try {
       response = await fetch(GROQ_SPEECH_URL, {
         method: 'POST',
+        // Never hang a student's request on a stuck upstream call.
+        signal: AbortSignal.timeout(30_000),
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',

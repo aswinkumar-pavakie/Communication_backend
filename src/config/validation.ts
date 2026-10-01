@@ -34,6 +34,11 @@ export const validationSchema = Joi.object({
   SUPABASE_SERVICE_ROLE_KEY: Joi.string().allow('').optional(),
   SUPABASE_STORAGE_BUCKET: Joi.string().default('voice-recordings'),
 
+  EMAIL_PROVIDER: Joi.string().valid('console', 'resend').default('console'),
+  RESEND_API_KEY: Joi.string().allow('').optional(),
+  EMAIL_FROM: Joi.string().allow('').optional(),
+  APP_TIMEZONE: Joi.string().allow('').optional(),
+
   THROTTLE_TTL: Joi.number().default(60),
   THROTTLE_LIMIT: Joi.number().default(100),
   AI_THROTTLE_TTL: Joi.number().default(60),

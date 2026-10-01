@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { SkillCode } from '#prisma-client';
 import { LlmAssessmentResultDto } from './dto/llm-assessment-result.dto.js';
 
 /**
@@ -13,6 +14,28 @@ import { LlmAssessmentResultDto } from './dto/llm-assessment-result.dto.js';
  * or persist it. Malformed output is rejected with a controlled error rather than silently
  * stored as an assessment.
  */
+const VALID_SKILL_CODES = new Set<string>(Object.values(SkillCode));
+
+/**
+ * The model sometimes returns "Grammar", "professional tone" or a code that doesn't exist,
+ * or the same skill twice. Persisting those fails the whole completion transaction (invalid
+ * enum / unique constraint), so normalise to known codes and keep one score per skill.
+ */
+export function normalizeSkillScores<
+  T extends { skillCode: string; score: number },
+>(scores: T[]): T[] {
+  const byCode = new Map<string, T>();
+  for (const s of scores) {
+    const code = s.skillCode
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, '_');
+    if (VALID_SKILL_CODES.has(code))
+      byCode.set(code, { ...s, skillCode: code });
+  }
+  return [...byCode.values()];
+}
+
 @Injectable()
 export class ScoringService {
   private readonly logger = new Logger(ScoringService.name);
@@ -40,6 +63,7 @@ export class ScoringService {
       );
     }
 
+    dto.skillScores = normalizeSkillScores(dto.skillScores);
     return dto;
   }
 

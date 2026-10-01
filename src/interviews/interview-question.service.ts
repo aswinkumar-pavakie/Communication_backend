@@ -33,6 +33,20 @@ export class InterviewQuestionService {
     return question;
   }
 
+  /** Like getByIdOrThrow, but only accepts an active question of the given interview. */
+  async getForInterviewOrThrow(
+    id: string,
+    interviewId: string,
+  ): Promise<InterviewQuestion> {
+    const question = await this.prisma.interviewQuestion.findFirst({
+      where: { id, interviewId, isActive: true },
+    });
+    if (!question) {
+      throw new NotFoundException('Interview question not found.');
+    }
+    return question;
+  }
+
   countQuestions(interviewId: string): Promise<number> {
     return this.prisma.interviewQuestion.count({
       where: { interviewId, isActive: true },

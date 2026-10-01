@@ -1,26 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import { MockPronunciationProvider } from './providers/mock-pronunciation.provider.js';
+import { SpeechSignalPronunciationProvider } from './providers/speech-signal-pronunciation.provider.js';
 import {
   PronunciationAssessmentProvider,
   PronunciationAssessmentResult,
+  PronunciationInput,
 } from './pronunciation.interface.js';
 
 /**
- * IMPLEMENTED: routing through a replaceable provider. MOCKED: the only provider wired up
- * today is MockPronunciationProvider - see its docstring for why this cannot be faked from
- * text alone. Swap the provider here once a real speech-analysis API is integrated.
+ * Scores pronunciation/delivery from the recording's transcription signals. Business logic
+ * depends on this service only, so a phoneme-level provider (e.g. Azure Pronunciation
+ * Assessment) can replace SpeechSignalPronunciationProvider without touching call sites.
  */
 @Injectable()
 export class PronunciationService {
-  constructor(private readonly provider: MockPronunciationProvider) {}
+  constructor(private readonly provider: SpeechSignalPronunciationProvider) {}
 
-  assess(
-    audio: Buffer,
-    transcript?: string,
-  ): Promise<PronunciationAssessmentResult> {
-    return (this.provider as PronunciationAssessmentProvider).assess(
-      audio,
-      transcript,
-    );
+  get providerName(): string {
+    return this.provider.name;
+  }
+
+  assess(input: PronunciationInput): PronunciationAssessmentResult | null {
+    return (this.provider as PronunciationAssessmentProvider).assess(input);
   }
 }

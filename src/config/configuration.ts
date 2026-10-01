@@ -34,6 +34,13 @@ export interface StorageConfig {
   supabaseStorageBucket: string;
 }
 
+export interface EmailConfig {
+  /** 'console' (dev: prints emails to the log) or 'resend'. */
+  provider: string;
+  resendApiKey?: string;
+  from: string;
+}
+
 export interface ThrottleConfig {
   ttl: number;
   limit: number;
@@ -48,6 +55,7 @@ export interface Configuration {
   cors: CorsConfig;
   ai: AiConfig;
   storage: StorageConfig;
+  email: EmailConfig;
   throttle: ThrottleConfig;
 }
 
@@ -95,6 +103,13 @@ export default (): Configuration => ({
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
     supabaseStorageBucket:
       process.env.SUPABASE_STORAGE_BUCKET ?? 'voice-recordings',
+  },
+  email: {
+    provider: process.env.EMAIL_PROVIDER ?? 'console',
+    resendApiKey: process.env.RESEND_API_KEY,
+    from:
+      process.env.EMAIL_FROM ??
+      'Communication Assistant <onboarding@resend.dev>',
   },
   throttle: {
     ttl: parseInt(process.env.THROTTLE_TTL ?? '60', 10),

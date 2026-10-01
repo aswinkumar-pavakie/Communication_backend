@@ -100,7 +100,8 @@ export class InterviewsController {
   getResult(
     @CurrentUser('studentProfileId') studentProfileId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('attemptId') attemptId?: string,
+    @Query('attemptId', new ParseUUIDPipe({ optional: true }))
+    attemptId?: string,
   ) {
     return this.interviewsService.getResult(studentProfileId, id, attemptId);
   }

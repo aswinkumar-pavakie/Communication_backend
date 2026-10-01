@@ -28,11 +28,14 @@ export class ConversationService {
         })
       : null;
 
-    const history = await this.prisma.conversationMessage.findMany({
-      where: { conversationId: conversation.id },
-      orderBy: { createdAt: 'asc' },
-      take: MAX_HISTORY_MESSAGES,
-    });
+    // Newest N messages (not the first N), back in chronological order for the model.
+    const history = (
+      await this.prisma.conversationMessage.findMany({
+        where: { conversationId: conversation.id },
+        orderBy: { createdAt: 'desc' },
+        take: MAX_HISTORY_MESSAGES,
+      })
+    ).reverse();
 
     await this.prisma.conversationMessage.create({
       data: {

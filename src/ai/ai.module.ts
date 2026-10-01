@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AssessmentService } from './assessment/assessment.service.js';
-import { MockPronunciationProvider } from './assessment/providers/mock-pronunciation.provider.js';
+import { SpeechSignalPronunciationProvider } from './assessment/providers/speech-signal-pronunciation.provider.js';
 import { PronunciationService } from './assessment/pronunciation.service.js';
 import { ScoringService } from './assessment/scoring.service.js';
 import { ConversationController } from './conversation/conversation.controller.js';
@@ -30,7 +30,7 @@ import { AiUsageService } from './usage/ai-usage.service.js';
     GoogleTextToSpeechProvider,
     GroqTextToSpeechProvider,
     TextToSpeechService,
-    MockPronunciationProvider,
+    SpeechSignalPronunciationProvider,
     PronunciationService,
     ScoringService,
     AssessmentService,

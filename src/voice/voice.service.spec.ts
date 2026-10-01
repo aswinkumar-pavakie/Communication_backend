@@ -22,9 +22,11 @@ function buildService(storage: {
     })),
   };
   const attempts = {
+    getActiveActivityOrThrow: jest.fn(async () => ({ id: 'a1' })),
     createVoiceAttempt: jest.fn(async () => ({
       attempt: { id: 'attempt-1' },
       assessment: { feedback: 'Nice and clear.' },
+      pronunciation: null,
     })),
   };
   const usage = { record: jest.fn(async () => undefined) };
@@ -36,7 +38,7 @@ function buildService(storage: {
     attempts as never,
     usage as never,
   );
-  return { service, stt, attempts };
+  return { service, stt, tts, attempts };
 }
 
 describe('VoiceService.analyze', () => {
@@ -55,7 +57,7 @@ describe('VoiceService.analyze', () => {
     expect(attempts.createVoiceAttempt).toHaveBeenCalledWith(
       's1',
       'a1',
-      'Hello, my name is Asha.',
+      expect.objectContaining({ transcript: 'Hello, my name is Asha.' }),
       'voice-attempts/x.m4a',
     );
     expect(result.transcript).toBe('Hello, my name is Asha.');
@@ -75,10 +77,10 @@ describe('VoiceService.analyze', () => {
     expect(attempts.createVoiceAttempt).toHaveBeenCalledWith(
       's1',
       'a1',
-      'Hello, my name is Asha.',
+      expect.objectContaining({ transcript: 'Hello, my name is Asha.' }),
       null,
     );
-    expect(result.audioFeedback.audioBase64).toBe(
+    expect(result.audioFeedback?.audioBase64).toBe(
       Buffer.from('mp3-bytes').toString('base64'),
     );
   });
@@ -96,8 +98,38 @@ describe('VoiceService.analyze', () => {
     expect(attempts.createVoiceAttempt).toHaveBeenCalledWith(
       's1',
       'a1',
-      'Hello, my name is Asha.',
+      expect.objectContaining({ transcript: 'Hello, my name is Asha.' }),
       null,
     );
+  });
+
+  it('still returns the scored answer when spoken feedback fails', async () => {
+    const { service, tts } = buildService({
+      isConfigured: () => false,
+      upload: async () => ({ path: 'unused' }),
+    });
+    tts.synthesize.mockRejectedValueOnce(new Error('TTS quota exceeded'));
+
+    const result = await service.analyze('s1', 'a1', audio, 'audio/m4a');
+
+    expect(result.audioFeedback).toBeNull();
+    expect(result.transcript).toBe('Hello, my name is Asha.');
+  });
+
+  it('rejects an unknown activity before uploading or transcribing', async () => {
+    const upload = jest.fn(async () => ({ path: 'x' }));
+    const { service, stt, attempts } = buildService({
+      isConfigured: () => true,
+      upload,
+    });
+    attempts.getActiveActivityOrThrow.mockRejectedValueOnce(
+      new Error('Activity not found.'),
+    );
+
+    await expect(
+      service.analyze('s1', 'nope', audio, 'audio/m4a'),
+    ).rejects.toThrow('Activity not found.');
+    expect(upload).not.toHaveBeenCalled();
+    expect(stt.transcribe).not.toHaveBeenCalled();
   });
 });

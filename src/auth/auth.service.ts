@@ -96,10 +96,14 @@ export class AuthService {
       throw new UnauthorizedException('Account is no longer active.');
     }
 
-    await this.prisma.refreshToken.update({
-      where: { id: stored.id },
+    // Atomic single-use claim: if two refreshes race with the same token, only one wins.
+    const claimed = await this.prisma.refreshToken.updateMany({
+      where: { id: stored.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (claimed.count !== 1) {
+      throw new UnauthorizedException('Refresh token is no longer valid.');
+    }
 
     return this.issueTokens(user);
   }
@@ -145,6 +149,11 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token.');
     }
+  }
+
+  /** New token pair for a user - used after a password change so this device stays signed in. */
+  issueTokensFor(user: User): Promise<AuthTokensDto> {
+    return this.issueTokens(user);
   }
 
   private async issueTokens(user: User): Promise<AuthTokensDto> {

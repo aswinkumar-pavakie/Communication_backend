@@ -23,6 +23,30 @@ import { VoiceService } from './voice.service.js';
 
 const MAX_AUDIO_SIZE_BYTES = 15 * 1024 * 1024;
 
+/**
+ * Only audio goes to storage and the paid STT API. iOS/Android recordings arrive as
+ * audio/m4a, audio/mp4, audio/x-caf, audio/wav or audio/mpeg; some devices label m4a as video/mp4.
+ */
+const AUDIO_UPLOAD_OPTIONS = {
+  limits: { fileSize: MAX_AUDIO_SIZE_BYTES },
+  fileFilter: (
+    _req: unknown,
+    file: { mimetype: string },
+    callback: (error: Error | null, accept: boolean) => void,
+  ) => {
+    const ok =
+      file.mimetype.startsWith('audio/') || file.mimetype === 'video/mp4';
+    callback(
+      ok
+        ? null
+        : new BadRequestException(
+            'Please upload an audio recording (m4a, wav, mp3).',
+          ),
+      ok,
+    );
+  },
+};
+
 @ApiTags('voice')
 @ApiBearerAuth()
 @Controller('voice')
@@ -36,9 +60,7 @@ export class VoiceController {
   @ApiOperation({
     summary: 'Transcribe an audio recording to text (speech-to-text only).',
   })
-  @UseInterceptors(
-    FileInterceptor('audio', { limits: { fileSize: MAX_AUDIO_SIZE_BYTES } }),
-  )
+  @UseInterceptors(FileInterceptor('audio', AUDIO_UPLOAD_OPTIONS))
   transcribe(
     @CurrentUser('studentProfileId') studentProfileId: string,
     @UploadedFile() audio?: Express.Multer.File,
@@ -73,9 +95,7 @@ export class VoiceController {
     summary:
       'Full voice pipeline: transcribe, assess against an activity, and return spoken feedback.',
   })
-  @UseInterceptors(
-    FileInterceptor('audio', { limits: { fileSize: MAX_AUDIO_SIZE_BYTES } }),
-  )
+  @UseInterceptors(FileInterceptor('audio', AUDIO_UPLOAD_OPTIONS))
   analyze(
     @CurrentUser('studentProfileId') studentProfileId: string,
     @Body() dto: AnalyzeVoiceDto,

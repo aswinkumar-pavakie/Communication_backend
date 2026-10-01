@@ -20,7 +20,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
+  async validate(
+    payload: JwtPayload & { tokenId?: string },
+  ): Promise<AuthenticatedUser> {
+    // Refresh tokens carry a tokenId; they must never be accepted as access tokens (which
+    // would otherwise be possible if both secrets were ever configured to the same value).
+    if (payload.tokenId) {
+      throw new UnauthorizedException('Use an access token for this request.');
+    }
     const user = await this.usersService.findByIdWithProfile(payload.sub);
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Account is no longer active.');

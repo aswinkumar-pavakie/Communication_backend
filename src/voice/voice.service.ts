@@ -65,6 +65,8 @@ export class VoiceService {
     audio: Buffer,
     mimeType: string,
   ) {
+    // Fail fast on a bad activity id before paying for storage and transcription.
+    await this.attemptsService.getActiveActivityOrThrow(activityId);
     const path = await this.storeRecording(audio, mimeType);
 
     const transcription = await this.sttService.transcribe(audio);
@@ -76,32 +78,52 @@ export class VoiceService {
       audioDurationSeconds: transcription.durationSeconds,
     });
 
-    const { attempt, assessment } =
+    const { attempt, assessment, pronunciation } =
       await this.attemptsService.createVoiceAttempt(
         studentId,
         activityId,
-        transcription.transcript,
+        transcription,
         path,
       );
 
-    const feedbackAudio = await this.ttsService.synthesize(assessment.feedback);
-    await this.aiUsageService.record({
-      studentId,
-      provider: this.ttsService.providerName,
-      service: 'TTS',
-      requestType: 'analyze-feedback',
-      audioDurationSeconds: feedbackAudio.durationSeconds,
-    });
+    // The attempt, progress and streak are already committed at this point. Spoken feedback
+    // is a bonus: if TTS fails (e.g. daily quota), still return the scored result - otherwise
+    // the app shows an error, the student retries, and a duplicate attempt gets scored.
+    let audioFeedback: {
+      audioBase64: string;
+      format: string;
+      durationSeconds?: number;
+    } | null = null;
+    try {
+      const feedbackAudio = await this.ttsService.synthesize(
+        assessment.feedback,
+      );
+      await this.aiUsageService.record({
+        studentId,
+        provider: this.ttsService.providerName,
+        service: 'TTS',
+        requestType: 'analyze-feedback',
+        audioDurationSeconds: feedbackAudio.durationSeconds,
+      });
+      audioFeedback = {
+        audioBase64: feedbackAudio.audio.toString('base64'),
+        format: feedbackAudio.format,
+        durationSeconds: feedbackAudio.durationSeconds,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `Spoken feedback unavailable, returning text only: ${String(err)}`,
+      );
+    }
 
     return {
       attempt,
       assessment,
       transcript: transcription.transcript,
-      audioFeedback: {
-        audioBase64: feedbackAudio.audio.toString('base64'),
-        format: feedbackAudio.format,
-        durationSeconds: feedbackAudio.durationSeconds,
-      },
+      /** Audio-derived pronunciation & delivery breakdown; null if too little speech to score. */
+      pronunciation,
+      /** Null when text-to-speech was unavailable - the written feedback is still complete. */
+      audioFeedback,
     };
   }
 
